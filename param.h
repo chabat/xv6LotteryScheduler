@@ -11,4 +11,8 @@
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
 #define FSSIZE       1000  // size of file system in blocks
-
+#define LOW          5   // Number of tickets of a low priority process
+#define MEDIUM       10  // Number of tickets of a medium priority process
+#define HIGH         20  // Number of tickets of a high priority process
+//#define NTICKETS     960 //Total number of available tickets (all processes
+                        //with high priority, NPROC * HIGH)

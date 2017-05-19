@@ -7,6 +7,8 @@
 #include "proc.h"
 #include "spinlock.h"
 
+int usedTickets = 0; //Amount of titckets currently in use
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -85,7 +87,7 @@ userinit(void)
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
-  
+
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
     panic("userinit: out of memory?");
@@ -138,7 +140,7 @@ growproc(int n)
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.
 int
-fork(void)
+fork(int ntickets)
 {
   int i, pid;
   struct proc *np;
@@ -174,6 +176,10 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+
+  if(ntickets == 0) ntickets = MEDIUM; //default amount of tickets (10)
+  np->tickets = ntickets;
+  usedTickets +=  ntickets;
 
   release(&ptable.lock);
 
@@ -218,6 +224,9 @@ exit(void)
         wakeup1(initproc);
     }
   }
+
+  //Return Used tickets
+  usedTickets -= p->tickets;
 
   // Jump into the scheduler, never to return.
   proc->state = ZOMBIE;
@@ -280,29 +289,37 @@ void
 scheduler(void)
 {
   struct proc *p;
+  unsigned int randomNumber = 1337, tmp;
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
+    randomNumber = (7 * randomNumber + 1337) % usedTickets; //Generate a pseudo-random number
+
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+    if(usedTickets > 0){ //PODE SER DESNECESSARIO
+      for(p = ptable.proc, tmp = 0; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
+        if(p->tickets <= randomNumber){
+          tmp += p->tickets;
+          continue;
+        }
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
+        swtch(&cpu->scheduler, p->context);
+        switchkvm();
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&cpu->scheduler, p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      proc = 0;
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        proc = 0;
+      }
     }
     release(&ptable.lock);
 
