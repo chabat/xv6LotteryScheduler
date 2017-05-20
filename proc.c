@@ -7,8 +7,6 @@
 #include "proc.h"
 #include "spinlock.h"
 
-int usedTickets = 0; //Amount of titckets currently in use
-
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -21,6 +19,8 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+
+int usedTickets; //Amount of tickets in use
 
 void
 pinit(void)
@@ -75,6 +75,10 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  //Set number of tickets
+  p->tickets = MEDIUM;
+  //usedTickets += MEDIUM;
+
   return p;
 }
 
@@ -112,6 +116,10 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+
+  //Set MEDIUM priority to the first process
+  p->tickets = MEDIUM;
+  //usedTickets += MEDIUM;
 
   release(&ptable.lock);
 }
@@ -178,8 +186,8 @@ fork(int ntickets)
   np->state = RUNNABLE;
 
   if(ntickets == 0) ntickets = MEDIUM; //default amount of tickets (10)
+  //usedTickets +=  (np->tickets - ntickets);
   np->tickets = ntickets;
-  usedTickets +=  ntickets;
 
   release(&ptable.lock);
 
@@ -226,7 +234,7 @@ exit(void)
   }
 
   //Return Used tickets
-  usedTickets -= p->tickets;
+  //usedTickets -= p->tickets;
 
   // Jump into the scheduler, never to return.
   proc->state = ZOMBIE;
@@ -289,18 +297,26 @@ void
 scheduler(void)
 {
   struct proc *p;
-  unsigned int randomNumber = 1337, tmp;
+  unsigned int randomNumber = 1337;  //random number seed
+  int tmp;
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-    randomNumber = (7 * randomNumber + 1337) % usedTickets; //Generate a pseudo-random number
-
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    if(usedTickets > 0){ //PODE SER DESNECESSARIO
-      for(p = ptable.proc, tmp = 0; p < &ptable.proc[NPROC]; p++){
+
+    usedTickets = 0; //Amount of tickets currently in use
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)  //Count tickets in use
+      if(p->state == RUNNABLE) usedTickets += p->tickets;
+
+  //cprintf("Tickets: %d\n", usedTickets);
+
+    if(usedTickets){
+      randomNumber = (7 * randomNumber + 1337) % usedTickets; //Generate a pseudo-random number
+
+      // Loop over process table looking for process to run.
+      for(p = ptable.proc, tmp = 0; p < &ptable.proc[NPROC]; p++, tmp++){
         if(p->state != RUNNABLE)
           continue;
         if(p->tickets <= randomNumber){
@@ -484,6 +500,8 @@ procdump(void)
   char *state;
   uint pc[10];
 
+  cprintf("Total of tickets in use: %d\n", usedTickets);
+
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -491,7 +509,7 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d %s %s", p->pid, state, p->name);
+    cprintf("%d %s %s tickets: %d\n", p->pid, state, p->name, p->tickets);
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
