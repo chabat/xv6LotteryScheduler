@@ -20,7 +20,6 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
-int usedTickets; //Amount of tickets in use
 
 void
 pinit(void)
@@ -150,6 +149,7 @@ growproc(int n)
 int
 fork(int ntickets)
 {
+  //cprintf("Forking process with %d tickets\n", ntickets);
   int i, pid;
   struct proc *np;
 
@@ -186,8 +186,9 @@ fork(int ntickets)
   np->state = RUNNABLE;
 
   if(ntickets == 0) ntickets = MEDIUM; //default amount of tickets (10)
-  //usedTickets +=  (np->tickets - ntickets);
   np->tickets = ntickets;
+  //cprintf("Forked process received %d tickets\n", np->tickets);
+  //usedTickets +=  (np->tickets - ntickets);
 
   release(&ptable.lock);
 
@@ -298,7 +299,7 @@ scheduler(void)
 {
   struct proc *p;
   unsigned int randomNumber = 1337;  //random number seed
-  int tmp;
+  int tmp, usedTickets;
 
   for(;;){
     // Enable interrupts on this processor.
@@ -323,6 +324,7 @@ scheduler(void)
           tmp += p->tickets;
           continue;
         }
+        p->scheduled++; //Count how many times the process was scheduled
         // Switch to chosen process.  It is the process's job
         // to release ptable.lock and then reacquire it
         // before jumping back to us.
@@ -495,12 +497,15 @@ procdump(void)
   [RUNNING]   "run   ",
   [ZOMBIE]    "zombie"
   };
-  int i;
+  int i, usedTickets = 0;
   struct proc *p;
   char *state;
   uint pc[10];
 
-  cprintf("Total of tickets in use: %d\n", usedTickets);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) //Count tickets in use
+    if(p->state == RUNNABLE) usedTickets += p->tickets;
+
+  cprintf("\nTotal of tickets in use: %d\n", usedTickets);
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == UNUSED)
@@ -509,11 +514,12 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d %s %s tickets: %d\n", p->pid, state, p->name, p->tickets);
+    cprintf("%d %s %s tickets: %d Scheduled: %d\n", p->pid, state, p->name,
+                                              p->tickets, p->scheduled) ;
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
-      for(i=0; i<10 && pc[i] != 0; i++)
-        cprintf(" %p", pc[i]);
+      for(i=0; i<10 && pc[i] != 0; i++);
+        //cprintf(" %p", pc[i]);
     }
     cprintf("\n");
   }
