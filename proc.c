@@ -75,7 +75,7 @@ found:
   p->context->eip = (uint)forkret;
 
   //Set number of tickets
-  p->tickets = MEDIUM;
+  //p->tickets = MEDIUM;
   //usedTickets += MEDIUM;
 
   return p;

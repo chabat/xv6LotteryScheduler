@@ -3,7 +3,7 @@
 #include "stat.h"
 #include "user.h"
 
-#define NPROC_T 10
+#define NPROC_T 3
 #define TIMEWASTER 11234567890
 
 void timewaster(void);
